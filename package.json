@@ -4,7 +4,7 @@
 	"description": "Arclamp data streaming",
 	"main": "index.js",
 	"scripts": {
-		"test": "cd test;node ClarinetStream-1.js"
+		"test": "cd test;node JsonPath-1.js"
 	},
 	"repository": "http://git.voodoowarez.com/arclamp2",
 	"author": "Matthew Fowle <rektide@voodoowarez.com>",
