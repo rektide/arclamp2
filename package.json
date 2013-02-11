@@ -1,0 +1,15 @@
+{
+	"name": "arclamp2",
+	"version": "1.0.0",
+	"description": "Arclamp data streaming",
+	"main": "index.js",
+	"scripts": {
+		"test": "cd test;node ClarinetStream-1.js"
+	},
+	"repository": "http://git.voodoowarez.com/arclamp2",
+	"author": "Matthew Fowle <rektide@voodoowarez.com>",
+	"license": "MIT/X",
+	"dependencies": {
+		"clarinet": ">= 0.7.1"
+	}
+}
