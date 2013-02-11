@@ -6,6 +6,6 @@ var fs= fs.createReadStream("../package.json"),
 
 fs.pipe(cs)
 cs.on("readable",function(){
-	console.log("GOT",clarinetStream.read())
+	console.log("GOT",cs.read())
 })
 

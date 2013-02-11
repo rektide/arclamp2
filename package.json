@@ -10,6 +10,5 @@
 	"author": "Matthew Fowle <rektide@voodoowarez.com>",
 	"license": "MIT/X",
 	"dependencies": {
-		"clarinet": ">= 0.7.1"
 	}
 }
