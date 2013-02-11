@@ -5,6 +5,7 @@ function ClarinetStream(){
 	if(!(this instanceof ClarinetStream)){
 		return new ClarinetStream()
 	}
+	stream.Transform.call(this)
 	return this
 }
 util.inherits(ClarinetStream, stream.Transform)
