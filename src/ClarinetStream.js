@@ -1,4 +1,5 @@
-var stream= require("stream"),
+var buffer= require("buffer").Buffer,
+  stream= require("stream"),
   util= require("util"),
   clarinet= require("clarinet")
 
@@ -8,6 +9,8 @@ function ClarinetStream(){
 	if(!(this instanceof ClarinetStream)){
 		return new ClarinetStream()
 	}
+	stream.Transform.call(this)
+
 	this.parser= clarinet.parser()
 	this.outFn= null
 
@@ -22,8 +25,10 @@ util.inherits(ClarinetStream, stream.Transform)
 ClarinetStream.prototype._transform= _transform
 
 function _transform(chunk, outFn, callback){
+	if(chunk instanceof buffer)
+		chunk= chunk.toString()
 	this.outFn= outFn
-	//this.parser.write(chunk)
+	this.parser.write(chunk)
 	callback()
 }
 
