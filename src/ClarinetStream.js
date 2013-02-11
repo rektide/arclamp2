@@ -3,7 +3,7 @@ var buffer= require("buffer").Buffer,
   util= require("util"),
   clarinet= require("clarinet")
 
-var valuedEvents= ["onerror", "onvalue", "onopenobject", "onkey"]
+var valuedEvents= ["error", "value", "openobject", "key"]
 
 function ClarinetStream(){
 	if(!(this instanceof ClarinetStream)){
@@ -17,7 +17,7 @@ function ClarinetStream(){
 	for(var i in clarinet.EVENTS){
 		var ev= clarinet.EVENTS[i],
 		  hasValue= valuedEvents.indexOf(ev)
-		this.parser[ev]= hasValue? function(i,a){this.outFn([i,a])}.bind(this,i): function(i){this.outFn([i])}.bind(this,i)
+		this.parser["on"+ev]= hasValue? function(i,a){this.outFn([i,a])}.bind(this,i): function(i){this.outFn([i])}.bind(this,i)
 	}
 	return this
 }
