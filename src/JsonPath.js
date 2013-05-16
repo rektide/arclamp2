@@ -11,7 +11,7 @@ function JsonPath(){
 	if(!(this instanceof JsonPath)){
 		return new JsonPath()
 	}
-	stream.Transform.call(this)
+	stream.Transform.call(this,{objectMode:true})
 
 	//this.input= input // input stream
 	this.stack= [] // address cursor
@@ -43,7 +43,7 @@ function _transform(chunk,outputFn,callback){
 	}else if(token == ch.openobject){
 		this.stack.push(val)
 	}
-	console.debug("STACK",this.stack)
+	console.log("STACK",this.stack)
 	callback()
 }
 
