@@ -7,6 +7,16 @@ var buffer= require("buffer").Buffer,
 var WILDCARD= "."
 var WILDERCARD= ".."
 
+
+function push2(hash,key,newVal){
+	try{
+		hash[key].push(newVal)
+	}catch(ex){
+		hash[key]= [newVal]
+	}
+	return hash
+}
+
 function JsonPath(){
 	if(!(this instanceof JsonPath)){
 		return new JsonPath()
@@ -17,11 +27,12 @@ function JsonPath(){
 	this.stack= [] // address cursor
 
 	// tracking engine:
-	//this.good= []
-	//this.bad= []
-	this.up= []
-	this.down= []
-	this.els= []
+	this.allup= [], alldown= [], allels= []
+	this.ups= [], this.downs= [], this.els= []
+
+	// a single object being created
+	this.ctx= null
+	this.good= -1
 
 	return this
 }
@@ -29,6 +40,8 @@ util.inherits(JsonPath, stream.Transform)
 JsonPath.prototype._transform= _transform // ???? Necessary ????
 JsonPath.prototype._isArray= _isArray
 JsonPath.prototype._top= _top
+JsonPath.prototype._cycle= _cycle
+JsonPath.prototype._stackState= _stackState
 
 var STATES= doFlags(["els","down","up"])
 function doEnum(e){
@@ -48,41 +61,59 @@ function doFlags(e){
 	return o
 }
 
+function _stackState(extra){
+	var extraDefined= extra==defined,
+	  stack= this.stack,
+	  depth= stack.length,
+	  returnArray= extraDefined?[depth,,,]:[depth,,],
+	  last= rv[1]= stack[depth-1]
+	rv[2]= this._isArray(_top)
+	if(extraDefined)
+		returnArray.push(extra)
+	return returnArray
+}
+
 function _transform(chunk,outputFn,callback){
 	var token= chunk[0],
 	  val= chunk[1]
+	  ss= this._stackState(val) // depth, last, isArr
 	if(token == ch.value){
-		var _top= this._top(),
-		  _isArr= this._isArray(_top)
-		if(_isArr){
-			++this.stack[this.stack.length-1]
+		if(ss[2]){
+			++this.stack[ss[0]-1]
 		}
-		for(var t in this.els){
-			this.els[t].call(this,_top,token,STATES.els,_isArr)
-		}
+		this._cycle(STATES.els,ss)
 	}else if(token == ch.key){
 		this.stack[this.stack.length-1]= val
-	}else if(token == ch.closearray || token == ch.closeobject){
-		var d= this.stack.pop()
-		for(var t in this.down){
-			this.down[t].call(this,d,token==ch.closearray,STATE.down)
-		}
+	// open close array
 	}else if(token == ch.openarray){
 		var _oldTop= this._top()
 		this.stack.push(0)
-		for(var t in this.up){
-			this.up[t](this,_oldTop,true,STATES.up)
-		}
+		this._cycle(STATES.up,ss,[_oldTop],true)
+	}else if(token == ch.closearray){
+		var d= this.stack.pop()
+		this._cycle(STATES.down,ss,[d,true])
+	// open close object, dupe of array
 	}else if(token == ch.openobject){
 		var _oldTop= this._top()
 		this.stack.push(val)
-		for(var t in this.up){
-			this.up[t](this,_oldTop,false,STATES.up)
-		}
+		this._cycle(STATES.up,ss,[_oldTop],false)
+	}else if(token == ch.closeobject){
+		this._cycle(STATES.down,ss,[d,false])
 	}
 	console.log("STACK",this.stack)
 	callback()
 }
+
+function _cycle(state,depth,ctx){
+	var stateName= STATE[state]
+	var local= this[stateName+"s"][depth],
+	  global= this["all"+stateNAme]
+	for(var t in local){
+		local[t].call(this,ctx,depth,state)
+	}
+}
+
+
 
 function _isArray(_top){
 	return !isNaN(_top===undefined?this._top():_top)
@@ -127,11 +158,12 @@ function JsonPathExpression(expression){
 	}
 }
 
-function Tag(name){
-	return function (e,isArr,state){
-		if(e==name){
-		}
+function Tag(tag){
+	this.tag= name
+	this.handlerEls= function (_top,isArr,state){
+		
 	}
+	this.handlerMatch= STATE.els
 }
 
 function Any(){
@@ -145,13 +177,15 @@ function Any(){
 
 function Filter(filter){
 	this.filter= filter
-	this.handler= function()
+	this.handler= function(){
+	}
 	this.handlerMatch= STATE.up
 }
 
 function Indexes(indexes){
 	this.indexes= indexes
-	this.handler= function()
+	this.handler= function(){
+	}
 	this.handlerMatch= State.els
 }
 
