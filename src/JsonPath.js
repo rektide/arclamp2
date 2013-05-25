@@ -81,30 +81,30 @@ function _transform(chunk,outputFn,callback){
 		if(ss[2]){
 			++this.stack[ss[0]-1]
 		}
-		this._cycle(STATES.els,ss)
+		this._cycle(undefined,ss,STATES.els)
 	}else if(token == ch.key){
 		this.stack[this.stack.length-1]= val
 	// open close array
 	}else if(token == ch.openarray){
 		var _oldTop= this._top()
 		this.stack.push(0)
-		this._cycle(STATES.up,ss,[_oldTop],true)
+		this._cycle([_oldTop],ss,STATES.up)
 	}else if(token == ch.closearray){
 		var d= this.stack.pop()
-		this._cycle(STATES.down,ss,[d,true])
+		this._cycle([d,true],ss,STATES.down,ss)
 	// open close object, dupe of array
 	}else if(token == ch.openobject){
 		var _oldTop= this._top()
 		this.stack.push(val)
-		this._cycle(STATES.up,ss,[_oldTop],false)
+		this._cycle([_oldTop],ss,STATES.up)
 	}else if(token == ch.closeobject){
-		this._cycle(STATES.down,ss,[d,false])
+		this._cycle([d,false],ss,STATES.down)
 	}
 	console.log("STACK",this.stack)
 	callback()
 }
 
-function _cycle(state,depth,ctx){
+function _cycle(ctx,depth,state){
 	var stateName= STATE[state]
 	var local= this[stateName+"s"][depth],
 	  global= this["all"+stateNAme]
@@ -160,7 +160,7 @@ function JsonPathExpression(expression){
 
 function Tag(tag){
 	this.tag= name
-	this.handlerEls= function (_top,isArr,state){
+	this.awaitTag= function (){
 		
 	}
 	this.handlerMatch= STATE.els
