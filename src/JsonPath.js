@@ -46,11 +46,12 @@ function JsonPath(){
 }
 util.inherits(JsonPath, stream.Transform)
 JsonPath.prototype.expr= jsonExpr
+JsonPath.prototype._pushHandle= _pushHandle
 JsonPath.prototype._transform= _transform // ???? Necessary ????
 JsonPath.prototype._isArray= _isArray
 JsonPath.prototype._top= _top
 JsonPath.prototype._cycle= _cycle
-JsonPath.prototype._handles= _handles
+JsonPath.prototype._handles= _handles // accessor function
 JsonPath.prototype._stackState= _stackState
 
 var STATES= ["key","primitive","open","close"]
@@ -128,7 +129,7 @@ function _stackState(extra,depth){
 function _transform(chunk,outputFn,callback){
 	var token= chunk[0],
 	  val= chunk[1],
-	  ss= this._stackState(val) // depth, last, isArr
+	  ss= this._stackState(val) // depth, last, isArr, json token value
 	if(token == ch.value){
 		if(ss[2]){
 			++this.stack[ss[0]-1]
@@ -185,6 +186,17 @@ function _handles(state,n){
 	return isNaN(n)? this[name]: this[name][n]
 }
 
+/**
+  add a handler
+*/
+function _pushHandle(h,state,n){
+	if(isNaN(n)){
+		pushm(this.stack,STATES.findGlobal(state),h)
+	}else{
+		pushm(this.stack[STATES.findLocal(state)],n,h)
+	}
+}
+
 function jsonExpr(expr){
 	return new JsonPathExpression(this,expr)
 }
@@ -226,29 +238,45 @@ function JsonPathExpression(stack,expression,opts){
 	}
 }
 
-function JsonFragment(exprs){
-	this.exprs= exprs
+/**
+  a singleton
+*/
+function JsonFragment(exprs,frag){
+	this.exprs= exprs // JsonExpression
+	this.frag= frag
 	return this
 }
 
+function Tip(depth,frag,previous){
+	this.depth= depth // stack dept
+	this.frag= frag // fragment number 
+	this.previous= previous // previous JsonFragment in JsonExpression
+}
+
+
+/**
+  produces a tip
+*/
 JsonFragment.prototype.install= function(depth){
-	this.depth= depth
+	this.depth= depth // got to go
 
 	// look through and add all handles
 	for(var i in this.handles){
 		var h= this.handles[i],
 		  dMod= h.d
 		  isGlobal= isNaN(dMod)
-		if(isGlobal)
-			pushm(this.stack,STATES.findGlobal(h.state),h)
-		else
-			pushm(this.stack[STATES.findLocal(h.state)],depth+dMod,h)
+		if(isGlobal){
+			this._pushHandle(h,h.STATE)
+			// handlers include ss
+		}else{
+			this._pushHandle(h,h.state,depth+dMod)
+		}
 	}
 	// post-installs
 	if(this._install)
 		this._install(depth)
 
-	// end
+	// trigger a .drop() event when this ellapses.
 	//this.stack.closes[depth]= function(){
 	//	
 	//}.bind(this)
@@ -282,15 +310,16 @@ JsonFragment.prototype.end= function(){
 }
 
 JsonFragment.prototype.register= function(state,h,n){
+	this.pushHandle(h,state,n)
 	var stateName= STATES[state]
 	if(isNaN(n)){
 		if(this.installed)
 			this.installed.push({state:state,h:h})
-		pushm(this.stack,"all"+stateName,h)
+		this._pushHandle(h,state)
 	}else{
 		if(this.installed)
 			this.installed.push({state:state,h:h,n:n})
-		pushm(this.stack[stateName+"s"],h,n)
+		this._pushHandle(h,state,n)
 	}
 }
 JsonFragment.prototype.unregister= function(state,h,n){
