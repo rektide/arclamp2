@@ -233,7 +233,6 @@ function JsonFragment(exprs){
 
 JsonFragment.prototype.install= function(depth){
 	this.depth= depth
-	this.installed= []
 
 	// look through and add all handles
 	for(var i in this.handles){
@@ -248,25 +247,38 @@ JsonFragment.prototype.install= function(depth){
 	// post-installs
 	if(this._install)
 		this._install(depth)
+
+	// end
+	//this.stack.closes[depth]= function(){
+	//	
+	//}.bind(this)
+}
+
+JsonFragment.prototype.drop= function(){
+	var depth= this.depth
+	for(var i in this.handles){
+		var h= this.handles[i],
+		  dMod= h.d
+		  isGlobal= isNaN(dMod)
+		var targetArray= isGlobal?this.stack[STATES.findGlobal(h.state)]:this.stack[STATES.findLocal(h.state)][depth+dMod]
+	}
+	if(this._drop)
+		this._drop(stack,currentDepth)
 }
 
 /**
   when a fragment succeeds
 */
 JsonFragment.prototype.success= function(){
-	var d= this.depth,
-	 dxx= ++d
-	this.exprs.frags[dxx].install(dxx)
-	this.exprs.frags[d].drop(d)
+	// install the next fragment at this depth
+	this.exprs.frags[this.exprs.frag+1].install(this.stack.depth)
 }
 
 /**
+  when a fragment will no longer have activity
 */
-JsonFragment.prototype.fail= function(){
-	var d= this.depth,
-	  dyy= --d
-	this.exprs.frags[dyy].install(dyy)
-	this.exprs.frags[d].drop(d)
+JsonFragment.prototype.end= function(){
+	//this.exprs.frags[this.depth].drop()
 }
 
 JsonFragment.prototype.register= function(state,h,n){
@@ -298,14 +310,6 @@ JsonFragment.prototype.unregister= function(state,h,n){
 	}
 }
 
-JsonFragment.prototype.drop= function(stack,currentDepth){
-	while(this.installed && this.installed.length){
-		var last= this.installed[this.installed.length-1]
-		this.unregister(last.state,last.h,last.n)
-	}
-	if(this._drop)
-		this._drop(stack,currentDepth)
-}
 
 function _callSuper(klass,that,args){
 	if(!(args instanceof Array))
@@ -332,6 +336,16 @@ function Any(exprs){
 	return this
 }
 util.inherits(Any, JsonFragment)
+
+Any.prototype.nextAny= function(){
+	if(!this.nextFrag)
+		this.nextFrag= this.exprs.frags[this.depth+1]
+	return this.nextFrag
+}
+
+Any.prototype.awaitAny= function(){
+	this.success()
+}
 
 function Filter(exprs,filter){
 	this.filter= filter
