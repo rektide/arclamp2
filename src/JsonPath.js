@@ -32,8 +32,7 @@ function JsonPath(){
 	this.stack= [] // address cursor
 
 	// tracking engine:
-	for(var i in STATES){
-		var stateName= STATES[i]
+	for(var stateName in STATES.nameKeys){
 		this["all"+stateName]= []
 		this[stateName+"s"]= []
 	}
@@ -46,6 +45,7 @@ function JsonPath(){
 	return this
 }
 util.inherits(JsonPath, stream.Transform)
+JsonPath.prototype.expr= jsonExpr
 JsonPath.prototype._transform= _transform // ???? Necessary ????
 JsonPath.prototype._isArray= _isArray
 JsonPath.prototype._top= _top
@@ -53,39 +53,78 @@ JsonPath.prototype._cycle= _cycle
 JsonPath.prototype._handles= _handles
 JsonPath.prototype._stackState= _stackState
 
-var STATES= doFlags(["key","primitive","open","close"])
-STATES.findGlobal= function(state){return "all"+STATES[state]}
-STATES.findLocal= function(state){return STATES[state]+"s"}
+var STATES= ["key","primitive","open","close"]
+STATES.flags= doPermute(STATES,null,undefined,true) // { 1:key, 2:primitive, 4:open, 8:close, key:1, primitive:2, open:4, close:8 }
+STATES.flags.vals= doPermute(STATES,null,true,false) // [key.primitive,open,close] // i think this could probably be better- ordinal -> real
+STATES.flags.ordinals= doPermute(STATES,null,true,true) // [key,primitive,,open,,,close]
+STATES.flags.nameKeys= doPermute(STATES,null,false,true) // { key: 1, primitive: 2, .. }
+STATES.flags.realToFlag= [1,2,4,8,16,32,64,128]
+STATES= STATES.flags
+
+STATES.findGlobal= function(state){return "all"+(isNaN(state)?state:STATES[state])}
+STATES.findLocal= function(state){return (isNaN(state)?state:STATES[state])+"s"}
 STATES.find= function(state,n){return isNaN(n)? STATES.findGlobal(state): STATES.findLocal(state)}
-function doEnum(e){
-	for(var i= 0; i< e.length; ++i)
-		e[e[i].toUpperCase()]= e[i]
-	return e
+
+STATES.lookup= function(stack,state,n){
+	return [
+	  stack[STATES.findGlobal(state)],
+	  stack[STATES.findLocal(state)][n]
+	]
 }
 
-function doFlags(e){
-	var o= {}
+function doPermute(e,o,fwdRev,flags){
+	o= o||(flags||fwdRev===false)?[]:{}
+	var ind= flags? pow2: identity,
+	  iter
+	if(fwdRev===true)
+		iter= setFwd
+	else if(fwdRev===false)
+		iter= setRev
+	else if(fwdRev===undefined)
+		iter= setBoth
+	else
+		throw "Invalid fwd/reverse argument"
 	for(var i= 0; i< e.length; ++i){
-		var name= e[i],
-		  val= Math.pow(2,i)
-		o[val]= name
-		o[name]= val
+		var el= e[i],
+		  index= ind(i)
+		iter(o,index,el)
 	}
 	return o
 }
 
-function _stackState(extra){
-	var extraDefined= extra==defined,
+function identity(i){return i}
+function pow2(i){return Math.pow(2,i)}
+
+function setFwd(o,k,v){
+	o[k]= v
+}
+function setRev(o,k,v){
+	o[v]= k
+}
+function setBoth(o,k,v){
+	o[k]= v
+	o[v]= k
+}
+
+/**
+  create a context object for a stack level.
+  @param extra optional additional context to append on
+  @param depth optional specific level of depth to get context for
+  @returns an array of [depth,last element,isArray,extra] for stack[depth]
+*/
+function _stackState(extra,depth){
+	var extraDefined= extra!==undefined,
 	  stack= this.stack,
 	  depth= stack.length,
 	  returnArray= extraDefined?[depth,,,]:[depth,,],
-	  last= rv[1]= stack[depth-1]
-	rv[2]= this._isArray(last)
+	  last= returnArray[1]= stack[depth-1]
+	returnArray[2]= this._isArray(last)
 	if(extraDefined)
 		returnArray.push(extra)
 	return returnArray
 }
 
+// feed from incoming object stream
 function _transform(chunk,outputFn,callback){
 	var token= chunk[0],
 	  val= chunk[1],
@@ -110,6 +149,7 @@ function _transform(chunk,outputFn,callback){
 		this.stack.push(val)
 		this._cycle(undefined,ss,STATES.open,false)
 	}else if(token == ch.closeobject){
+		var d= this.stack.pop()
 		this._cycle(d,ss,STATES.close,false)
 	}
 	console.log("STACK",this.stack)
@@ -117,8 +157,9 @@ function _transform(chunk,outputFn,callback){
 }
 
 function _cycle(ctx,ss,state,isArr){
-	var stateName= STATE[state],
-	  local= this[stateName+"s"][depth],
+	var stateName= STATES[state],
+	  locals= this[stateName+"s"],
+	  local= locals?locals[ss[0]]:null,
 	  global= this["all"+stateName]
 	for(var t in local){
 		local[t].call(this,ctx,ss,state,isArr)
@@ -144,10 +185,14 @@ function _handles(state,n){
 	return isNaN(n)? this[name]: this[name][n]
 }
 
+function jsonExpr(expr){
+	return new JsonPathExpression(this,expr)
+}
 
-function JsonPathExpression(stack,expression){
+function JsonPathExpression(stack,expression,opts){
 	this.stack= stack
-	this.frags= [MultipleArraysRoot(this)]
+	//this.frags= [MultipleArraysRoot(this)]
+	this.frags= []
 	this.frag= 0
 
 	var exprs= module.exports.parse(expression).split(";")
@@ -156,13 +201,13 @@ function JsonPathExpression(stack,expression){
 		if(expr == "..")
 			this.frags.push(new Any(this))
 		else if(expr[0] == "?" && expr[1] == "("  && expr[expr.length-1] == ")")
-			this.frags.push(new Filter(this,expr.substring(2,expr.length-1)
+			this.frags.push(new Filter(this,expr.substring(2,expr.length-1)))
 		else if(expr[0] == "(" && expr[expr.length-1] == ")")
-			this.frags.push(new Filter(this,expr.substring(1,expr.length-1)
+			this.frags.push(new Filter(this,expr.substring(1,expr.length-1)))
 		else{
 			var exprRange= expr.split(":",2),
 			  exprIndexes= expr.split(",",2),
-			  hasRange == exprRange.length == 2,
+			  hasRange= exprRange.length == 2,
 			  hasIndexes = exprIndexes.length == 2
 			if(hasRange && hasIndexes)
 				throw "Unexpected parameter: "+expr
@@ -189,15 +234,39 @@ function JsonFragment(exprs){
 JsonFragment.prototype.install= function(depth){
 	this.depth= depth
 	this.installed= []
+
+	// look through and add all handles
+	for(var i in this.handles){
+		var h= this.handles[i],
+		  dMod= h.d
+		  isGlobal= isNaN(dMod)
+		if(isGlobal)
+			pushm(this.stack,STATES.findGlobal(h.state),h)
+		else
+			pushm(this.stack[STATES.findLocal(h.state)],depth+dMod,h)
+	}
+	// post-installs
 	if(this._install)
 		this._install(depth)
 }
 
+/**
+  when a fragment succeeds
+*/
 JsonFragment.prototype.success= function(){
-	
+	var d= this.depth,
+	 dxx= ++d
+	this.exprs.frags[dxx].install(dxx)
+	this.exprs.frags[d].drop(d)
 }
 
+/**
+*/
 JsonFragment.prototype.fail= function(){
+	var d= this.depth,
+	  dyy= --d
+	this.exprs.frags[dyy].install(dyy)
+	this.exprs.frags[d].drop(d)
 }
 
 JsonFragment.prototype.register= function(state,h,n){
@@ -239,24 +308,24 @@ JsonFragment.prototype.drop= function(stack,currentDepth){
 }
 
 function _callSuper(klass,that,args){
-	if(!(args instanceof array))
+	if(!(args instanceof Array))
 		args= [args]
 	klass.super_.apply(that,args)
 }
 
 function Tag(exprs,tag){
-	this.tag= tag
 	_callSuper(Tag,this,exprs)
+	this.tag= tag
+	this.handles= [
+		this.awaitTag
+	]
 	return this
 }
+util.inherits(Tag, JsonFragment)
 Tag.prototype.awaitTag= function(ctx,ss,state,isArr){
 	if(ss[3] == this.tag)
 		this.success()
 }
-Tag.prototype._install= function(depth){
-	this.register(STATES.key,this.awaitTag,depth)
-}
-util.inherits(Tag, JsonFragment)
 
 function Any(exprs){
 	_callSuper(Any,this,exprs)
@@ -291,20 +360,33 @@ util.inherits(Range, JsonFragment)
 */
 function MultipleArraysRoot(exprs){
 	_callSuper(MultipleArraysRoot,this,exprs)
+	this.handles= [
+		this.awaitRootGood
+	]
 	return this
 }
 util.inherits(MultipleArraysRoot, JsonFragment)
-MultipleArraysRoot.prototype._install= function(stack,i){
-	this.register(STATES.open,this.awaitRootGood,i)
-}
-MultipleArraysRoot.prototype.awaitRootGood= function(ctx,ss,state,isArr){
+function awaitRootGood(ctx,ss,state,isArr){
 	if(isArr){
-		this.installNext(ctx,ss,state,isArr)
+		this.success(ctx,ss,state,isArr)
 		// drop
 		// rebuild
 		// TODO: 
 	}
 }
+awaitRootGood.state= STATES.open
+awaitRootGood.d= 0
+MultipleArraysRoot.prototype.awaitRootGood= awaitRootGood
+
+
+/**
+  SingleRoot processes a single value.
+*/
+function SingleRoot(exprs){
+	_callSuper(SingleRoot,this,exprs)
+	return this
+}
+util.inherits(SingleRoot, JsonFragment)
 
 module.exports= JsonPath
 
