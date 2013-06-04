@@ -309,104 +309,71 @@ function Tip(frag,previousTip){
 */
 JsonFragment.prototype.install= function(previousTip){
 	var tip= new Tip(this,previousTip)
-	//tip.install()
-	tip.installHandles()
-	tip.installDrop()
-	//for(var thi in tip.frag.handles){
-	//	var th= tip.frag.handles[thi]
-	//	this.exprs.stack._pushHandle(th,th.state,th.d,previousTip.frag.exprs.stack.depth)
-	//}
-
-	// look through and add all handles
-	//for(var i in this.handles){
-	//	var h= this.handles[i],
-	//	  dMod= h.d
-	//	  isGlobal= isNaN(dMod)
-	//	if(isGlobal){
-	//		this._pushHandle(h,h.state)
-	//		// handlers include ss
-	//	}else{
-	//		this._pushHandle(h,h.state,depth+dMod)
-	//	}
-	//}
-	// post-installs
-	if(this._install)
-		this._install(tip)
-
-	// trigger a .drop() event when this ellapses.
-	//this.stack.closes[depth]= function(){
-	//	
-	//}.bind(this)
+	tip.install()
 }
 
 Tip.prototype.install= function(){
-	this.installHandles()
-	this.installDrop()
-	this.installTip()
-	this.installFrag()
+	this._installHandles()
+	this._installDrop()
+	this._installTip()
+	this._installFrag()
 }
-
-Tip.prototype.installHandles= function(){
+prototype._installHandles= function(){
 	for(var thi in this.frag.handles){
 		var th= this.frag.handles[thi]
-		this.installHandler(thth)
+		this._installHandle(th)
 	}
 }
-
-Tip.prototype.installDrop= function(){
-	this.makeDropHandle()
-	this.installHandle(this.drop)
+Tip.prototype._installDrop= function(){
+	this._makeDropHandle()
+	this._installHandle(this.drop)
 }
-
-Tip.prototype.installTip= function(){
+Tip.prototype._installTip= function(){
 	if(this._install)
 		this._install()
 }
-
-Tip.prototype.installFrag= function(){
+Tip.prototype._installFrag= function(){
 	if(this.frag._install)
 		this.frag._install(this)
 }
 
-Tip.prototype.installHandle= function(h,state,n,d){
-	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
-}
-
-Tip.prototype.makeDropHandle= function(){
+Tip.prototype._makeDropHandle= function(){
 	var h= this.drop= (_dropHandle.bind(this))
 	h.state= STATE.close
 	h.d= 0
 	return h
 }
-
-Tip.prototype.dropHandle= function(h,state,n,d){
-	this.frags.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?state.d:n,d===undefined?this.stackDepth:d)
+Tip.prototype._installHandle= function(h,state,n,d){
+	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
-function _dropHandle(){
-	_dropHandles.call(this)
-	_dropDrop.call(this)
-	_dropTip.call(this)
-	_dropFrag.call(this)
+function _dropHandle= function(){
+	this._dropHandles()
+	this._dropDrop()
+	this._dropTip()
+	this._dropFrag()
 }
-function _dropHandles(){
+Tip.prototype._dropHandles(){
 	for(var thi in this.frag.handles){
 		var th= this.frag.handles[thi]
-		this.frag.exprs.stack._dropHandle(th,th.state,th.d,this.stackDepth)
+		this._dropHandle(th)
 	}
 }
-function _dropDrop(){
-	this.frag.exprs.stack._dropHandle(this.drop,STATE.close,0,this.stackDepth)
+Tip.prototype._dropDrop(){
+	this._dropHandle(this.drop)
 }
-function _dropTip(){
+Tip.prototype._dropTip(){
 	if(!this._drop)
 		return
 	this._drop()
 }
-function _dropFrag(){
+Tip.prototype._dropFrag(){
 	if(!this.frag._drop)
 	    return
 	this.frag._drop(this)
+}
+Tip.prototype._dropHandle= function(h,state,n,d){
+	this.frags.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?state.d:n,d===undefined?this.stackDepth:d)
 }
 
 
