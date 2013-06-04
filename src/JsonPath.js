@@ -12,11 +12,12 @@ var WILDERCARD= ".."
 */
 function pushm(hash,key,newVal){
 	try{
-		hash[key].push(newVal)
+		var arr= hash[key]
+		arr.push(newVal)
+		return arr
 	}catch(ex){
-		hash[key]= [newVal]
+		return hash[key]= [newVal]
 	}
-	return hash
 }
 
 /**
@@ -178,7 +179,7 @@ function _transform(chunk,outputFn,callback){
 		var d= this.stack.pop()
 		this._cycle(d,ss,STATES.close,false)
 	}
-	console.log("STACK",this.stack)
+	console.log("STACK",this.stack,this.stack.length)
 	callback()
 }
 
@@ -189,10 +190,13 @@ function _cycle(ctx,ss,state,isArr){
 	//  local= locals?locals[ss[0]]:null,
 	//  global= this["all"+stateName],
 	//  lookup= [global,local]
-	for(var t in lookup[1]){
-		lookup[1][t].call(this,ctx,ss,state,isArr)
+	if(lookup[1]){
+		var local= lookup[1][ss._depth()]
+		for(var t in local){
+			local.call(this,ctx,ss,state,isArr)
+		}
 	}
-	for(var t in lookup[0]){
+	for(var t in lookup[0]){ 
 		lookup[0][t].call(this,ctx,ss,state,isArr)
 	}
 }
@@ -222,19 +226,23 @@ function _handles(state,n){
 */
 function _pushHandle(h,state,n,d){
 	if(isNaN(n)){
-		pushm(this.stack,STATES.findGlobal(state),h)
+		console.log("ADDING GLOBAL",typeof h,n,d,STATES.findGlobal(state)+"/"+state)
+		pushm(this,STATES.findGlobal(state),h)
 	}else{
-		pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
+		var ld= STATES.findLocal(state)
+		console.log("ADDING LOCAL",typeof h,n,d,ld+"/"+state)
+		var s= this[ld]|| (this[ld]= [])
+		s[n+(d||0)]= h
+		//pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
 	}
 }
 
 function _dropHandle(h,state,n,d){
 	var s
 	if(isNaN(n)){
-		s= this.stack[STATES.findGlobal(state)]
+		s= this[STATES.findGlobal(state)]
 	}else{
-		var ld= n+(d||0)
-		s= this.stack[STATES.findLocal(state)][ld]
+		s= this[STATES.findLocal(state)][n+(d||0)]
 	}
 	for(var i in s){
 		if(h == s[i]){
@@ -282,6 +290,7 @@ function JsonPathExpression(stack,expression,opts){
 				this.frags.push(new Tag(this,expr))
 		}
 	}
+	this.root= this.frags[0].install()
 	return this
 }
 
@@ -318,7 +327,7 @@ Tip.prototype.install= function(){
 	this._installTip()
 	this._installFrag()
 }
-prototype._installHandles= function(){
+Tip.prototype._installHandles= function(){
 	for(var thi in this.frag.handles){
 		var th= this.frag.handles[thi]
 		this._installHandle(th)
@@ -339,35 +348,36 @@ Tip.prototype._installFrag= function(){
 
 Tip.prototype._makeDropHandle= function(){
 	var h= this.drop= (_dropHandle.bind(this))
-	h.state= STATE.close
+	h.state= STATES.close
 	h.d= 0
 	return h
 }
 Tip.prototype._installHandle= function(h,state,n,d){
+	console.log                   ("ih",state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
-function _dropHandle= function(){
+function _dropHandle(){
 	this._dropHandles()
 	this._dropDrop()
 	this._dropTip()
 	this._dropFrag()
 }
-Tip.prototype._dropHandles(){
+Tip.prototype._dropHandles= function(){
 	for(var thi in this.frag.handles){
 		var th= this.frag.handles[thi]
 		this._dropHandle(th)
 	}
 }
-Tip.prototype._dropDrop(){
+Tip.prototype._dropDrop= function(){
 	this._dropHandle(this.drop)
 }
-Tip.prototype._dropTip(){
+Tip.prototype._dropTip= function(){
 	if(!this._drop)
 		return
 	this._drop()
 }
-Tip.prototype._dropFrag(){
+Tip.prototype._dropFrag= function(){
 	if(!this.frag._drop)
 	    return
 	this.frag._drop(this)
@@ -417,9 +427,15 @@ function Tag(exprs,tag){
 }
 util.inherits(Tag, JsonFragment)
 Tag.prototype.awaitTag= function(ctx,ss,state,isArr){
-	if(ss[3] == this.tag)
+	if(ss._last() == this.tag){
+		console.log("GOOD",this.tag,ss._last())
 		this.success()
+	}else{
+		console.log("AWAITED",this.tag,ss._last())
+	}
 }
+Tag.prototype.awaitTag.d= 0
+Tag.prototype.awaitTag.state= STATES.key
 
 function Any(exprs){
 	_callSuper(Any,this,exprs)
@@ -460,7 +476,7 @@ function Range(exprs,start,end){
 util.inherits(Range, JsonFragment)
 
 /**
-  MultiplArrayRoot carries an uninitialized JsonExpression from zero stack state to multiple array states.
+  MultipleArrayRoot carries an uninitialized JsonExpression from zero stack state to multiple array states.
 */
 function MultipleArraysRoot(exprs){
 	_callSuper(MultipleArraysRoot,this,exprs)
