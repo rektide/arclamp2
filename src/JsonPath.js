@@ -47,6 +47,7 @@ function JsonPath(){
 util.inherits(JsonPath, stream.Transform)
 JsonPath.prototype.expr= jsonExpr
 JsonPath.prototype._pushHandle= _pushHandle
+JsonPath.prototype._dropHandle= _dropHandle
 JsonPath.prototype._transform= _transform
 JsonPath.prototype._isArray= _isArray
 JsonPath.prototype._top= _top
@@ -130,11 +131,9 @@ function _stackState(extra){
 	returnArray._extra= _ssExtra
 	return returnArray
 }
-
 function _ssDepth(){
 	return this[0]
 }
-
 function _ssLast(){
 	return this[1]
 }
@@ -172,7 +171,7 @@ function _transform(chunk,outputFn,callback){
 	}else if(token == ch.openobject){
 		this._cycle(undefined,ss,STATES.open,false)
 		if(ss[2]){ // arrays position increments
-			++this.stack[ss[0]-1]
+			++this.stack[ss._depth()-1]
 		}
 		this.stack.push(val)
 	}else if(token == ch.closeobject){
@@ -184,7 +183,7 @@ function _transform(chunk,outputFn,callback){
 }
 
 function _cycle(ctx,ss,state,isArr){
-	var lookup= STATES.lookup(this.stack,state,ss[0])
+	var lookup= STATES.lookup(this.stack,state,ss._depth())
 	//var stateName= STATES[state],
 	//  locals= this[stateName+"s"],
 	//  local= locals?locals[ss[0]]:null,
@@ -226,6 +225,21 @@ function _pushHandle(h,state,n,d){
 		pushm(this.stack,STATES.findGlobal(state),h)
 	}else{
 		pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
+	}
+}
+
+function _dropHandle(h,state,n,d){
+	var s
+	if(isNaN(n)){
+		s= this.stack[STATES.findGlobal(state)]
+	}else{
+		var ld= n+(d||0)
+		s= this.stack[STATES.findLocal(state)][ld]
+	}
+	for(var i in s){
+		if(h == s[i]){
+			s.splice(i,1)
+		}
 	}
 }
 
@@ -286,6 +300,7 @@ function Tip(frag,previousTip){
 	this.frag= frag
 	this.previousTip= previousTip
 	this.stackDepth= frag.exprs.stack.stack.length
+	this.drop= null
 	return this
 }
 
@@ -293,8 +308,9 @@ function Tip(frag,previousTip){
   produces a tip
 */
 JsonFragment.prototype.install= function(previousTip){
-	var depth= this.exprs.stack.depth
-	var tip= new Tip(this,depth,previousTip)
+	var tip= new Tip(this,previousTip)
+	tip.installHandles()
+	tip.installDrop()
 	//for(var thi in tip.frag.handles){
 	//	var th= tip.frag.handles[thi]
 	//	this.exprs.stack._pushHandle(th,th.state,th.d,previousTip.frag.exprs.stack.depth)
@@ -322,24 +338,59 @@ JsonFragment.prototype.install= function(previousTip){
 	//}.bind(this)
 }
 
-Tip.prototype.installHandlers= function(){
+Tip.prototype.installHandles= function(){
 	for(var thi in this.frag.handles){
 		var th= this.frag.handles[thi]
-		this.frag.exprs.stack._pushHandle(th,th.state,th.d,this.stackDepth)
+		this.installHandler(thth)
 	}
 }
 
-JsonFragment.prototype.drop= function(){
-	var depth= this.depth
-	for(var i in this.handles){
-		var h= this.handles[i],
-		  dMod= h.d
-		  isGlobal= isNaN(dMod)
-		var targetArray= isGlobal?this.stack[STATES.findGlobal(h.state)]:this.stack[STATES.findLocal(h.state)][depth+dMod]
-	}
-	if(this._drop)
-		this._drop(stack,currentDepth)
+Tip.prototype.installDrop= function(){
+	this.makeDropHandle()
+	this.installHandle(this.drop)
 }
+
+Tip.prototype.installHandle= function(h,state,n,d){
+	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+}
+
+Tip.prototype.makeDropHandle= function(){
+	var h= this.drop= (_dropHandle.bind(this))
+	h.state= STATE.close
+	h.d= 0
+	return h
+}
+
+Tip.prototype.dropHandle= function(h,state,n,d){
+	this.frags.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?state.d:n,d===undefined?this.stackDepth:d)
+}
+
+function _dropHandle(){
+	_dropHandles.call(this)
+	_dropDrop.call(this)
+	_dropTip.call(this)
+	_dropFrag.call(this)
+}
+function _dropHandles(){
+	for(var thi in this.frag.handles){
+		var th= this.frag.handles[thi]
+		this.frag.exprs.stack._dropHandle(th,th.state,th.d,this.stackDepth)
+	}
+}
+function _dropDrop(){
+	this.frag.exprs.stack._dropHandle(this.drop,STATE.close,0,this.stackDepth)
+}
+function _dropTip(){
+	if(!this._drop)
+		return
+	this._drop()
+}
+function _dropFrag(){
+	if(!this.frag._drop)
+	    return
+	this.frag._drop(this)
+}
+
 
 /**
   when a fragment succeeds
@@ -362,39 +413,8 @@ Tip.prototype.findNextFrag= function(){
   when a fragment will no longer have activity
 */
 Tip.prototype.end= function(){
-	//this.exprs.frags[this.depth].drop()
+	this.drop()
 }
-
-JsonFragment.prototype.register= function(state,h,n){
-	//this._pushHandle(h,state,n)
-	var stateName= STATES[state]
-	if(isNaN(n)){
-		if(this.installed)
-			this.installed.push({state:state,h:h})
-		this._pushHandle(h,state)
-	}else{
-		if(this.installed)
-			this.installed.push({state:state,h:h,n:n})
-		this._pushHandle(h,state,n)
-	}
-}
-JsonFragment.prototype.unregister= function(state,h,n){
-	var stateName= STATES[state]
-	for(var h= 0; h< this.installed.length; ++h){
-		var i= this.installed[h]
-		if(i.state == state && i.state == h && i.n == n){
-			this.installed= this.installed.splice(h,1)
-			--h
-		}
-	}
-	var stackSpot= isNaN(n)? this.stack["all"+stateName]: this.stack[stateName+"s"][n]
-	for(var i in stackSpot){
-		var hiter= stackSpot[i]
-		if(hiter == h)
-			stackSpot.splice(i,1)
-	}
-}
-
 
 function _callSuper(klass,that,args){
 	if(!(args instanceof Array))
