@@ -47,7 +47,7 @@ function JsonPath(){
 util.inherits(JsonPath, stream.Transform)
 JsonPath.prototype.expr= jsonExpr
 JsonPath.prototype._pushHandle= _pushHandle
-JsonPath.prototype._transform= _transform // ???? Necessary ????
+JsonPath.prototype._transform= _transform
 JsonPath.prototype._isArray= _isArray
 JsonPath.prototype._top= _top
 JsonPath.prototype._cycle= _cycle
@@ -67,10 +67,14 @@ STATES.findLocal= function(state){return (isNaN(state)?state:STATES[state])+"s"}
 STATES.find= function(state,n){return isNaN(n)? STATES.findGlobal(state): STATES.findLocal(state)}
 
 STATES.lookup= function(stack,state,n){
-	return [
-	  stack[STATES.findGlobal(state)],
-	  stack[STATES.findLocal(state)][n]
-	]
+	var global= STATES.findGlobal(state),
+	  local= STATES.findLocal(state),
+	  localStack= stack[local]
+	console.log("LOOKUP",state,global,local)
+	return localStack?[
+	  stack[global],
+	  localStack[n]]: [stack[global]]
+
 }
 
 function doPermute(e,o,fwdRev,flags){
@@ -113,16 +117,32 @@ function setBoth(o,k,v){
   @param depth optional specific level of depth to get context for
   @returns an array of [depth,last element,isArray,extra] for stack[depth]
 */
-function _stackState(extra,depth){
+function _stackState(extra){
 	var extraDefined= extra!==undefined,
 	  stack= this.stack,
 	  depth= stack.length,
-	  returnArray= extraDefined?[depth,,,]:[depth,,],
-	  last= returnArray[1]= stack[depth-1]
-	returnArray[2]= this._isArray(last)
-	if(extraDefined)
-		returnArray.push(extra)
+	  returnArray= extraDefined?[depth,,,extra]:[depth,,],
+	  last= returnArray[1]= stack[depth-1],
+	  isArr= returnArray[2]= this._isArray(last)
+	returnArray._depth= _ssDepth
+	returnArray._last= _ssLast
+	returnArray._isArr= _ssIsArr
+	returnArray._extra= _ssExtra
 	return returnArray
+}
+
+function _ssDepth(){
+	return this[0]
+}
+
+function _ssLast(){
+	return this[1]
+}
+function _ssIsArr(){
+	return this[2]
+}
+function _ssExtra(){
+	return this[3]
 }
 
 // feed from incoming object stream
@@ -131,24 +151,30 @@ function _transform(chunk,outputFn,callback){
 	  val= chunk[1],
 	  ss= this._stackState(val) // depth, last, isArr, json token value
 	if(token == ch.value){
-		if(ss[2]){
-			++this.stack[ss[0]-1]
+		this._cycle(undefined,ss,STATES.primitive)
+		if(ss[2]){ // arrays position increments
+			++this.stack[ss._depth()-1]
 		}
-		this._cycle(undefined,ss,STATES.val)
 	}else if(token == ch.key){
 		this.stack[this.stack.length-1]= val
 		this._cycle(undefined,ss,STATES.key)
 	// open close array
 	}else if(token == ch.openarray){
-		this.stack.push(0)
 		this._cycle(undefined,ss,STATES.open,true)
+		if(ss[2]){ // arrays position increments
+			++this.stack[ss._depth()-1]
+		}
+		this.stack.push(0)
 	}else if(token == ch.closearray){
 		var d= this.stack.pop()
 		this._cycle(d,ss,STATES.close,true)
 	// open close object, dupe of array
 	}else if(token == ch.openobject){
-		this.stack.push(val)
 		this._cycle(undefined,ss,STATES.open,false)
+		if(ss[2]){ // arrays position increments
+			++this.stack[ss[0]-1]
+		}
+		this.stack.push(val)
 	}else if(token == ch.closeobject){
 		var d= this.stack.pop()
 		this._cycle(d,ss,STATES.close,false)
@@ -158,15 +184,17 @@ function _transform(chunk,outputFn,callback){
 }
 
 function _cycle(ctx,ss,state,isArr){
-	var stateName= STATES[state],
-	  locals= this[stateName+"s"],
-	  local= locals?locals[ss[0]]:null,
-	  global= this["all"+stateName]
-	for(var t in local){
-		local[t].call(this,ctx,ss,state,isArr)
+	var lookup= STATES.lookup(this.stack,state,ss[0])
+	//var stateName= STATES[state],
+	//  locals= this[stateName+"s"],
+	//  local= locals?locals[ss[0]]:null,
+	//  global= this["all"+stateName],
+	//  lookup= [global,local]
+	for(var t in lookup[1]){
+		lookup[1][t].call(this,ctx,ss,state,isArr)
 	}
-	for(var t in global){
-		global[t].call(this,ctx,ss,state,isArr)
+	for(var t in lookup[0]){
+		lookup[0][t].call(this,ctx,ss,state,isArr)
 	}
 }
 
@@ -188,12 +216,16 @@ function _handles(state,n){
 
 /**
   add a handler
+  @param h handler
+  @param state
+  @param n a local depth to install at
+  @param d optional offset for n
 */
-function _pushHandle(h,state,n){
+function _pushHandle(h,state,n,d){
 	if(isNaN(n)){
 		pushm(this.stack,STATES.findGlobal(state),h)
 	}else{
-		pushm(this.stack[STATES.findLocal(state)],n,h)
+		pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
 	}
 }
 
@@ -236,6 +268,7 @@ function JsonPathExpression(stack,expression,opts){
 				this.frags.push(new Tag(this,expr))
 		}
 	}
+	return this
 }
 
 /**
@@ -243,43 +276,57 @@ function JsonPathExpression(stack,expression,opts){
 */
 function JsonFragment(exprs,frag){
 	this.exprs= exprs // JsonExpression
-	this.frag= frag
+	this.frag= frag // ordinal number
 	return this
 }
 
-function Tip(depth,frag,previous){
-	this.depth= depth // stack dept
-	this.frag= frag // fragment number 
-	this.previous= previous // previous JsonFragment in JsonExpression
+/**
+*/
+function Tip(frag,previousTip){
+	this.frag= frag
+	this.previousTip= previousTip
+	this.stackDepth= frag.exprs.stack.stack.length
+	return this
 }
-
 
 /**
   produces a tip
 */
-JsonFragment.prototype.install= function(depth){
-	this.depth= depth // got to go
+JsonFragment.prototype.install= function(previousTip){
+	var depth= this.exprs.stack.depth
+	var tip= new Tip(this,depth,previousTip)
+	//for(var thi in tip.frag.handles){
+	//	var th= tip.frag.handles[thi]
+	//	this.exprs.stack._pushHandle(th,th.state,th.d,previousTip.frag.exprs.stack.depth)
+	//}
 
 	// look through and add all handles
-	for(var i in this.handles){
-		var h= this.handles[i],
-		  dMod= h.d
-		  isGlobal= isNaN(dMod)
-		if(isGlobal){
-			this._pushHandle(h,h.STATE)
-			// handlers include ss
-		}else{
-			this._pushHandle(h,h.state,depth+dMod)
-		}
-	}
+	//for(var i in this.handles){
+	//	var h= this.handles[i],
+	//	  dMod= h.d
+	//	  isGlobal= isNaN(dMod)
+	//	if(isGlobal){
+	//		this._pushHandle(h,h.state)
+	//		// handlers include ss
+	//	}else{
+	//		this._pushHandle(h,h.state,depth+dMod)
+	//	}
+	//}
 	// post-installs
 	if(this._install)
-		this._install(depth)
+		this._install(tip)
 
 	// trigger a .drop() event when this ellapses.
 	//this.stack.closes[depth]= function(){
 	//	
 	//}.bind(this)
+}
+
+Tip.prototype.installHandlers= function(){
+	for(var thi in this.frag.handles){
+		var th= this.frag.handles[thi]
+		this.frag.exprs.stack._pushHandle(th,th.state,th.d,this.stackDepth)
+	}
 }
 
 JsonFragment.prototype.drop= function(){
@@ -297,20 +344,29 @@ JsonFragment.prototype.drop= function(){
 /**
   when a fragment succeeds
 */
-JsonFragment.prototype.success= function(){
+Tip.prototype.success= function(){
 	// install the next fragment at this depth
-	this.exprs.frags[this.exprs.frag+1].install(this.stack.depth)
+	this.findNextFrag().install(this)
+	//this.frag.exprs.frags[this.exprs.frag+1].install(this.stack.depth,this.exprs.frags[this.exprs.frag],this)
+}
+
+Tip.prototype.findNextFrag= function(){
+	var nextFrag= this.frags.exprs.frags[this.frag.frag+1]
+	if(!nextFrag){
+		console.warn("unhandled end of tip")
+	}
+	return nextFrag
 }
 
 /**
   when a fragment will no longer have activity
 */
-JsonFragment.prototype.end= function(){
+Tip.prototype.end= function(){
 	//this.exprs.frags[this.depth].drop()
 }
 
 JsonFragment.prototype.register= function(state,h,n){
-	this.pushHandle(h,state,n)
+	//this._pushHandle(h,state,n)
 	var stateName= STATES[state]
 	if(isNaN(n)){
 		if(this.installed)
