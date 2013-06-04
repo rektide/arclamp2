@@ -72,7 +72,7 @@ STATES.lookup= function(stack,state,n){
 	var global= STATES.findGlobal(state),
 	  local= STATES.findLocal(state),
 	  localStack= stack[local]
-	console.log("LOOKUP",state,global,local)
+	console.log("LOOKUP",state,global,local,!!localStack)
 	return localStack?[
 	  stack[global],
 	  localStack[n]]: [stack[global]]
@@ -190,6 +190,7 @@ function _cycle(ctx,ss,state,isArr){
 	//  local= locals?locals[ss[0]]:null,
 	//  global= this["all"+stateName],
 	//  lookup= [global,local]
+	console.log("CYCLE",STATES.ordinals[state],ss._depth(),this.stack.length,!!lookup[1])
 	if(lookup[1]){
 		var local= lookup[1][ss._depth()]
 		for(var t in local){
@@ -226,15 +227,16 @@ function _handles(state,n){
 */
 function _pushHandle(h,state,n,d){
 	if(isNaN(n)){
-		console.log("ADDING GLOBAL",typeof h,n,d,STATES.findGlobal(state)+"/"+state)
+		console.log("ADDING GLOBAL",typeof h,h.name,n,d,STATES.findGlobal(state)+"/"+state)
 		pushm(this,STATES.findGlobal(state),h)
 	}else{
 		var ld= STATES.findLocal(state)
-		console.log("ADDING LOCAL",typeof h,n,d,ld+"/"+state)
+		console.log("ADDING LOCAL",typeof h,h.name,n,d,ld+"/"+state)
 		var s= this[ld]|| (this[ld]= [])
 		s[n+(d||0)]= h
 		//pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
 	}
+	console.log("ADDED",this)
 }
 
 function _dropHandle(h,state,n,d){
@@ -349,11 +351,10 @@ Tip.prototype._installFrag= function(){
 Tip.prototype._makeDropHandle= function(){
 	var h= this.drop= (_dropHandle.bind(this))
 	h.state= STATES.close
-	h.d= 0
+	h.d= 1
 	return h
 }
 Tip.prototype._installHandle= function(h,state,n,d){
-	console.log                   ("ih",state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
@@ -428,13 +429,13 @@ function Tag(exprs,tag){
 util.inherits(Tag, JsonFragment)
 Tag.prototype.awaitTag= function(ctx,ss,state,isArr){
 	if(ss._last() == this.tag){
-		console.log("GOOD",this.tag,ss._last())
+		console.log("BAWAIT",this.tag,ss._last())
 		this.success()
 	}else{
-		console.log("AWAITED",this.tag,ss._last())
+		console.log("GAWAIT",this.tag,ss._last())
 	}
 }
-Tag.prototype.awaitTag.d= 0
+Tag.prototype.awaitTag.d= 1
 Tag.prototype.awaitTag.state= STATES.key
 
 function Any(exprs){
