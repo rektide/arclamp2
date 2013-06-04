@@ -309,6 +309,7 @@ function Tip(frag,previousTip){
 */
 JsonFragment.prototype.install= function(previousTip){
 	var tip= new Tip(this,previousTip)
+	//tip.install()
 	tip.installHandles()
 	tip.installDrop()
 	//for(var thi in tip.frag.handles){
@@ -338,6 +339,13 @@ JsonFragment.prototype.install= function(previousTip){
 	//}.bind(this)
 }
 
+Tip.prototype.install= function(){
+	this.installHandles()
+	this.installDrop()
+	this.installTip()
+	this.installFrag()
+}
+
 Tip.prototype.installHandles= function(){
 	for(var thi in this.frag.handles){
 		var th= this.frag.handles[thi]
@@ -348,6 +356,16 @@ Tip.prototype.installHandles= function(){
 Tip.prototype.installDrop= function(){
 	this.makeDropHandle()
 	this.installHandle(this.drop)
+}
+
+Tip.prototype.installTip= function(){
+	if(this._install)
+		this._install()
+}
+
+Tip.prototype.installFrag= function(){
+	if(this.frag._install)
+		this.frag._install(this)
 }
 
 Tip.prototype.installHandle= function(h,state,n,d){
