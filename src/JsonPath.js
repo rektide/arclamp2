@@ -180,8 +180,10 @@ function _transform(chunk,outputFn,callback){
 		this._cycle(d,ss,STATES.close,true)
 	// open close object, dupe of array
 	}else if(token == ch.openobject){
-		this._cycle(val,ss,STATES.open,false)
 		this.stack.push(val)
+		ss[1]= val
+		ss[2]= this._isArray(val)
+		this._cycle(val,ss,STATES.open,false)
 	}else if(token == ch.closeobject){
 		var d= this.stack.pop()
 		if(ss[2]){ // arrays position increments
@@ -190,7 +192,7 @@ function _transform(chunk,outputFn,callback){
 		ss= this._stackState()
 		this._cycle(d,ss,STATES.close,false)
 	}
-	console.log("STACK",this.stack,ch[token],"'"+val+"'")
+	console.log("TRANSFORM",this.stack,ch[token],"'"+val+"'")
 	callback()
 }
 
@@ -205,12 +207,12 @@ function _cycle(ctx,ss,state,isArr){
 	//  lookup= [global,local]
 	if(local){
 		for(var t in local){
-			console.log("LOCAL",ss,STATES[state])
+			console.log("LOCAL",ss.join(":"),STATES[state])
 			local[t].call(this,ctx,ss,state,isArr)
 		}
 	}
 	for(var t in global){ 
-		console.log("GLOBAL",ss,STATES[state])
+		console.log("GLOBAL",ss.join(":"),STATES[state])
 		global[t].call(this,ctx,ss,state,isArr)
 	}
 }
@@ -335,7 +337,7 @@ function Tip(frag,previousTip){
   produces a tip
 */
 JsonFragment.prototype.install= function(previousTip){
-	console.log("INSTALL")
+	console.log("INSTALL",this.constructor.name)
 	var tip= new Tip(this,previousTip)
 	tip.install()
 }
@@ -366,6 +368,7 @@ Tip.prototype._installFrag= function(){
 }
 Tip.prototype._installHandle= function(h,state,n,d){
 	var handle= h.bind(this.frag,this)
+	handle.orig= h
 	if(!h.states){
 		this.frag.exprs.stack._pushHandle(handle,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 	}else{
@@ -409,9 +412,13 @@ Tip.prototype._dropFrag= function(){
 	this.frag._drop(this)
 }
 Tip.prototype._dropHandle= function(h,state,n,d){
-	var h2= h.bind(this.frag,this)
-	h2.orig= h // ffs
-	this.frag.exprs.stack._dropHandle(h.bind(this.frag,this),state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+	if(!h.states){
+		this.frag.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+	}else{
+		for(var s in h.states){
+			this.frag.exprs.stack._dropHandle(h,h.states[s],n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+		}
+	}
 }
 
 
@@ -420,6 +427,7 @@ Tip.prototype._dropHandle= function(h,state,n,d){
 */
 Tip.prototype.success= function(){
 	// install the next fragment at this depth
+	var nf= this.findNextFrag()
 	this.findNextFrag().install(this)
 	//this.frag.exprs.frags[this.exprs.frag+1].install(this.stack.depth,this.exprs.frags[this.exprs.frag],this)
 }
