@@ -155,9 +155,8 @@ function _transform(chunk,outputFn,callback){
 			++this.stack[ss._depth()-1]
 		}
 	}else if(token == ch.key){
-		console.log("KEY",val)
-		this.stack[this.stack.length-1]= val
-		ss= this._stackState()
+		this.stack[this.stack.length-1]= ss[1]= val
+		ss[2]= this._isArray(val)
 		this._cycle(undefined,ss,STATES.key)
 	// open close array
 	}else if(token == ch.openarray){
@@ -183,7 +182,7 @@ function _transform(chunk,outputFn,callback){
 		ss= this._stackState()
 		this._cycle(d,ss,STATES.close,false)
 	}
-	console.log("STACK",this.stack,this.stack.length)
+	console.log("STACK",this.stack,ch[token])
 	callback()
 }
 
@@ -231,18 +230,17 @@ function _handles(state,n){
 */
 function _pushHandle(h,state,n,d){
 	if(isNaN(n)){
-		console.log("ADDING GLOBAL",n,d,STATES.findGlobal(state)+"/"+state)
+		//console.log("ADDING GLOBAL",n,d,STATES.findGlobal(state)+"/"+state)
 		pushm(this,STATES.findGlobal(state),h)
 	}else{
 		var ld= STATES.findLocal(state),
 		  depth= n+(d||0)
-		console.log("ADDING LOCAL",n,d,ld+"/"+state,depth)
+		//console.log("ADDING LOCAL",n,d,ld+"/"+state,depth)
 		var s= this[ld],
 		  t= s[depth]|| (s[depth]= [])
 		t.push(h)
 		//pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
 	}
-	console.log("ADDED",this)
 }
 
 function _dropHandle(h,state,n,d){
@@ -441,7 +439,7 @@ Tag.prototype.awaitTag= function(tip,ctx,ss,state,isArr){
 	if(ss._last() == this.tag){
 		console.log("+++++++++++++++++++++++++++")
 		console.log("BAWAIT",this.tag,ss._last())
-		this.success()
+		tip.success()
 	}else{
 		console.log("GAWAIT",this.tag,ss._last())
 	}
@@ -462,7 +460,7 @@ Any.prototype.nextAny= function(){
 }
 
 Any.prototype.awaitAny= function(){
-	this.success()
+	tip.success()
 }
 
 function Filter(exprs,filter){
