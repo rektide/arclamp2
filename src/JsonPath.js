@@ -72,7 +72,6 @@ STATES.lookup= function(stack,state,n){
 	var global= STATES.findGlobal(state),
 	  local= STATES.findLocal(state),
 	  localStack= stack[local]
-	console.log("LOOKUP",state,global,local,!!localStack)
 	return localStack?[
 	  stack[global],
 	  localStack[n]]: [stack[global]]
@@ -184,21 +183,21 @@ function _transform(chunk,outputFn,callback){
 }
 
 function _cycle(ctx,ss,state,isArr){
-	var lookup= STATES.lookup(this.stack,state,ss._depth())
+	var lookup= STATES.lookup(this,state,ss._depth()),
+	 global= lookup[0],
+	 local= lookup[1]
 	//var stateName= STATES[state],
 	//  locals= this[stateName+"s"],
 	//  local= locals?locals[ss[0]]:null,
 	//  global= this["all"+stateName],
 	//  lookup= [global,local]
-	console.log("CYCLE",STATES.ordinals[state],ss._depth(),this.stack.length,!!lookup[1])
-	if(lookup[1]){
-		var local= lookup[1][ss._depth()]
+	if(local){
 		for(var t in local){
-			local.call(this,ctx,ss,state,isArr)
+			local[t].call(this,ctx,ss,state,isArr)
 		}
 	}
-	for(var t in lookup[0]){ 
-		lookup[0][t].call(this,ctx,ss,state,isArr)
+	for(var t in global){ 
+		global[t].call(this,ctx,ss,state,isArr)
 	}
 }
 
@@ -227,13 +226,15 @@ function _handles(state,n){
 */
 function _pushHandle(h,state,n,d){
 	if(isNaN(n)){
-		console.log("ADDING GLOBAL",typeof h,h.name,n,d,STATES.findGlobal(state)+"/"+state)
+		console.log("ADDING GLOBAL",n,d,STATES.findGlobal(state)+"/"+state)
 		pushm(this,STATES.findGlobal(state),h)
 	}else{
-		var ld= STATES.findLocal(state)
-		console.log("ADDING LOCAL",typeof h,h.name,n,d,ld+"/"+state)
-		var s= this[ld]|| (this[ld]= [])
-		s[n+(d||0)]= h
+		var ld= STATES.findLocal(state),
+		  depth= n+(d||0)
+		console.log("ADDING LOCAL",n,d,ld+"/"+state,depth)
+		var s= this[ld],
+		  t= s[depth]|| (s[depth]= [])
+		t.push(h)
 		//pushm(this.stack[STATES.findLocal(state)],n+(d||0),h)
 	}
 	console.log("ADDED",this)
@@ -267,11 +268,11 @@ function JsonPathExpression(stack,expression,opts){
 	for(var i= 1; i< exprs.length; ++i){
 		var expr= exprs[i]
 		if(expr == "..")
-			this.frags.push(new Any(this))
+			new Any(this)
 		else if(expr[0] == "?" && expr[1] == "("  && expr[expr.length-1] == ")")
-			this.frags.push(new Filter(this,expr.substring(2,expr.length-1)))
+			new Filter(this,expr.substring(2,expr.length-1))
 		else if(expr[0] == "(" && expr[expr.length-1] == ")")
-			this.frags.push(new Filter(this,expr.substring(1,expr.length-1)))
+			new Filter(this,expr.substring(1,expr.length-1))
 		else{
 			var exprRange= expr.split(":",2),
 			  exprIndexes= expr.split(",",2),
@@ -280,16 +281,18 @@ function JsonPathExpression(stack,expression,opts){
 			if(hasRange && hasIndexes)
 				throw "Unexpected parameter: "+expr
 			else if(hasRange)
-				this.frags.push(new Range(this,parseInt(exprRange[0])||"",parseInt(exprRange[1])||""))
+				new Range(this,parseInt(exprRange[0])||"",parseInt(exprRange[1])||"")
 			else if(hasIndexes){
 				for(var j in exprIndexes){
 					var val= exprIndexes[j]= parseInt(exprIndexes[j])
 					if(Number.isNaN(val))
 						throw "Unexpected parameter: "+expr
 				}
-				this.frags.push(new Indexes(this,exprIndexes))
+				new Indexes(this,exprIndexes)
 			}else
-				this.frags.push(new Tag(this,expr))
+
+				new Tag(this,expr)
+
 		}
 	}
 	this.root= this.frags[0].install()
@@ -301,7 +304,7 @@ function JsonPathExpression(stack,expression,opts){
 */
 function JsonFragment(exprs,frag){
 	this.exprs= exprs // JsonExpression
-	this.frag= frag // ordinal number
+	this.frag= this.exprs.frags.push(this)-1 // ordinal number
 	return this
 }
 
