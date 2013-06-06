@@ -181,6 +181,7 @@ function _transform(chunk,outputFn,callback){
 	// open close object, dupe of array
 	}else if(token == ch.openobject){
 		this.stack.push(val)
+		++ss[0]
 		ss[1]= val
 		ss[2]= this._isArray(val)
 		this._cycle(val,ss,STATES.open,false)
@@ -369,7 +370,7 @@ Tip.prototype._installFrag= function(){
 Tip.prototype._installHandle= function(h,state,n,d){
 	var handle= h.bind(this.frag,this)
 	handle.orig= h
-	if(!h.states){
+	if(state||!h.states){
 		this.frag.exprs.stack._pushHandle(handle,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 	}else{
 		for(var s in h.states){
@@ -384,7 +385,6 @@ Tip.prototype._makeDropHandle= function(){
 	h.d= 0
 	return h
 }
-
 function _tipDropHandle(){
 	console.log("DROP",this.frag.exprs.stack.stack.length)
 	this._dropHandles()
@@ -412,7 +412,7 @@ Tip.prototype._dropFrag= function(){
 	this.frag._drop(this)
 }
 Tip.prototype._dropHandle= function(h,state,n,d){
-	if(!h.states){
+	if(state||!h.states){
 		this.frag.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 	}else{
 		for(var s in h.states){
@@ -427,15 +427,18 @@ Tip.prototype._dropHandle= function(h,state,n,d){
 */
 Tip.prototype.success= function(){
 	// install the next fragment at this depth
-	var nf= this.findNextFrag()
-	this.findNextFrag().install(this)
-	//this.frag.exprs.frags[this.exprs.frag+1].install(this.stack.depth,this.exprs.frags[this.exprs.frag],this)
+	var nextFrag= this.findNextFrag()
+	if(nextFrag){
+		this.findNextFrag().install(this)
+	}else{
+		this.frag.exprs.stack.push(".") // success
+	}
 }
 
 Tip.prototype.findNextFrag= function(){
 	var nextFrag= this.frag.exprs.frags[this.frag.frag+1]
 	if(!nextFrag){
-		console.warn("unhandled end of tip")
+		console.warn("unhandled end of tip",this.frag.frag)
 	}
 	return nextFrag
 }
