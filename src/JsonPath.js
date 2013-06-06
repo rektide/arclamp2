@@ -122,15 +122,23 @@ function _stackState(extra){
 	var extraDefined= extra!==undefined,
 	  stack= this.stack,
 	  depth= stack.length,
-	  returnArray= extraDefined?[depth,,,extra]:[depth,,],
+	  returnArray= new _ss(depth,extra),
 	  last= returnArray[1]= stack[depth-1],
 	  isArr= returnArray[2]= this._isArray(last)
-	returnArray._depth= _ssDepth
-	returnArray._last= _ssLast
-	returnArray._isArr= _ssIsArr
-	returnArray._extra= _ssExtra
 	return returnArray
 }
+function _ss(depth,extra){
+	if(extra){
+		this.push(depth,undefined,undefined,extra)
+	}else{
+		this.push(depth,undefined,undefined)
+	}
+}
+_ss.prototype= new Array
+_ss.prototype._depth= _ssDepth
+_ss.prototype._last= _ssLast
+_ss.prototype._isArr= _ssIsArr
+_ss.prototype._extra= _ssExtra
 function _ssDepth(){
 	return this[0]
 }
@@ -182,7 +190,7 @@ function _transform(chunk,outputFn,callback){
 		ss= this._stackState()
 		this._cycle(d,ss,STATES.close,false)
 	}
-	console.log("STACK",this.stack,ch[token])
+	console.log("STACK",this.stack,ch[token],"'"+val+"'")
 	callback()
 }
 
@@ -197,10 +205,12 @@ function _cycle(ctx,ss,state,isArr){
 	//  lookup= [global,local]
 	if(local){
 		for(var t in local){
+			console.log("LOCAL",ss,STATES[state])
 			local[t].call(this,ctx,ss,state,isArr)
 		}
 	}
 	for(var t in global){ 
+		console.log("GLOBAL",ss,STATES[state])
 		global[t].call(this,ctx,ss,state,isArr)
 	}
 }
@@ -230,12 +240,12 @@ function _handles(state,n){
 */
 function _pushHandle(h,state,n,d){
 	if(isNaN(n)){
-		//console.log("ADDING GLOBAL",n,d,STATES.findGlobal(state)+"/"+state)
+		console.log("ADDING GLOBAL",n,d,STATES.findGlobal(state)+"/"+state)
 		pushm(this,STATES.findGlobal(state),h)
 	}else{
 		var ld= STATES.findLocal(state),
 		  depth= n+(d||0)
-		//console.log("ADDING LOCAL",n,d,ld+"/"+state,depth)
+		console.log("ADDING LOCAL",n,d,ld+"/"+state,depth)
 		var s= this[ld],
 		  t= s[depth]|| (s[depth]= [])
 		t.push(h)
@@ -325,6 +335,7 @@ function Tip(frag,previousTip){
   produces a tip
 */
 JsonFragment.prototype.install= function(previousTip){
+	console.log("INSTALL")
 	var tip= new Tip(this,previousTip)
 	tip.install()
 }
@@ -354,17 +365,25 @@ Tip.prototype._installFrag= function(){
 		this.frag._install(this)
 }
 Tip.prototype._installHandle= function(h,state,n,d){
-	this.frag.exprs.stack._pushHandle(h.bind(this.frag,this),state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+	var handle= h.bind(this.frag,this)
+	if(!h.states){
+		this.frag.exprs.stack._pushHandle(handle,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+	}else{
+		for(var s in h.states){
+			this.frag.exprs.stack._pushHandle(handle,h.states[s],n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+		}
+	}
 }
 
 Tip.prototype._makeDropHandle= function(){
 	var h= this.drop= (_tipDropHandle.bind(this))
 	h.state= STATES.close
-	h.d= 1
+	h.d= 0
 	return h
 }
 
 function _tipDropHandle(){
+	console.log("DROP",this.frag.exprs.stack.stack.length)
 	this._dropHandles()
 	this._dropDrop()
 	this._dropTip()
@@ -445,7 +464,7 @@ Tag.prototype.awaitTag= function(tip,ctx,ss,state,isArr){
 	}
 }
 Tag.prototype.awaitTag.d= 1
-Tag.prototype.awaitTag.state= STATES.key
+Tag.prototype.awaitTag.states= [STATES.key,STATES.open]
 
 function Any(exprs){
 	_callSuper(Any,this,exprs)
