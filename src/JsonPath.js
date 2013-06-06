@@ -262,7 +262,6 @@ function JsonPathExpression(stack,expression,opts){
 	this.stack= stack
 	//this.frags= [MultipleArraysRoot(this)]
 	this.frags= []
-	this.frag= 0
 
 	var exprs= module.exports.parse(expression).split(";")
 	for(var i= 1; i< exprs.length; ++i){
@@ -352,7 +351,7 @@ Tip.prototype._installFrag= function(){
 }
 
 Tip.prototype._makeDropHandle= function(){
-	var h= this.drop= (_dropHandle.bind(this))
+	var h= this.drop= (_tipDropHandle.bind(this))
 	h.state= STATES.close
 	h.d= 1
 	return h
@@ -361,7 +360,7 @@ Tip.prototype._installHandle= function(h,state,n,d){
 	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
-function _dropHandle(){
+function _tipDropHandle(){
 	this._dropHandles()
 	this._dropDrop()
 	this._dropTip()
@@ -387,7 +386,7 @@ Tip.prototype._dropFrag= function(){
 	this.frag._drop(this)
 }
 Tip.prototype._dropHandle= function(h,state,n,d){
-	this.frags.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?state.d:n,d===undefined?this.stackDepth:d)
+	this.frag.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
 
@@ -401,7 +400,7 @@ Tip.prototype.success= function(){
 }
 
 Tip.prototype.findNextFrag= function(){
-	var nextFrag= this.frags.exprs.frags[this.frag.frag+1]
+	var nextFrag= this.frag.exprs.frags[this.frag.frag+1]
 	if(!nextFrag){
 		console.warn("unhandled end of tip")
 	}
