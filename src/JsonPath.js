@@ -147,7 +147,7 @@ function _ssExtra(){
 // feed from incoming object stream
 function _transform(chunk,outputFn,callback){
 	var token= chunk[0],
-	  val= chunk[1],
+	  val= chunk[1]
 	  ss= this._stackState(val) // depth, last, isArr, json token value
 	if(token == ch.value){
 		this._cycle(undefined,ss,STATES.primitive)
@@ -155,27 +155,32 @@ function _transform(chunk,outputFn,callback){
 			++this.stack[ss._depth()-1]
 		}
 	}else if(token == ch.key){
+		console.log("KEY",val)
 		this.stack[this.stack.length-1]= val
+		ss= this._stackState()
 		this._cycle(undefined,ss,STATES.key)
 	// open close array
 	}else if(token == ch.openarray){
 		this._cycle(undefined,ss,STATES.open,true)
-		if(ss[2]){ // arrays position increments
-			++this.stack[ss._depth()-1]
-		}
+	
 		this.stack.push(0)
 	}else if(token == ch.closearray){
 		var d= this.stack.pop()
-		this._cycle(d,ss,STATES.close,true)
-	// open close object, dupe of array
-	}else if(token == ch.openobject){
-		this._cycle(undefined,ss,STATES.open,false)
 		if(ss[2]){ // arrays position increments
 			++this.stack[ss._depth()-1]
 		}
+		ss= this._stackState()
+		this._cycle(d,ss,STATES.close,true)
+	// open close object, dupe of array
+	}else if(token == ch.openobject){
+		this._cycle(val,ss,STATES.open,false)
 		this.stack.push(val)
 	}else if(token == ch.closeobject){
 		var d= this.stack.pop()
+		if(ss[2]){ // arrays position increments
+			++this.stack[ss._depth()-1]
+		}
+		ss= this._stackState()
 		this._cycle(d,ss,STATES.close,false)
 	}
 	console.log("STACK",this.stack,this.stack.length)
@@ -248,7 +253,8 @@ function _dropHandle(h,state,n,d){
 		s= this[STATES.findLocal(state)][n+(d||0)]
 	}
 	for(var i in s){
-		if(h == s[i]){
+		var cur= s[i]
+		if(h == cur || h == cur.orig){
 			s.splice(i,1)
 		}
 	}
@@ -349,15 +355,15 @@ Tip.prototype._installFrag= function(){
 	if(this.frag._install)
 		this.frag._install(this)
 }
+Tip.prototype._installHandle= function(h,state,n,d){
+	this.frag.exprs.stack._pushHandle(h.bind(this.frag,this),state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+}
 
 Tip.prototype._makeDropHandle= function(){
 	var h= this.drop= (_tipDropHandle.bind(this))
 	h.state= STATES.close
 	h.d= 1
 	return h
-}
-Tip.prototype._installHandle= function(h,state,n,d){
-	this.frag.exprs.stack._pushHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
 function _tipDropHandle(){
@@ -386,7 +392,9 @@ Tip.prototype._dropFrag= function(){
 	this.frag._drop(this)
 }
 Tip.prototype._dropHandle= function(h,state,n,d){
-	this.frag.exprs.stack._dropHandle(h,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
+	var h2= h.bind(this.frag,this)
+	h2.orig= h // ffs
+	this.frag.exprs.stack._dropHandle(h.bind(this.frag,this),state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 }
 
 
@@ -429,8 +437,9 @@ function Tag(exprs,tag){
 	return this
 }
 util.inherits(Tag, JsonFragment)
-Tag.prototype.awaitTag= function(ctx,ss,state,isArr){
+Tag.prototype.awaitTag= function(tip,ctx,ss,state,isArr){
 	if(ss._last() == this.tag){
+		console.log("+++++++++++++++++++++++++++")
 		console.log("BAWAIT",this.tag,ss._last())
 		this.success()
 	}else{
@@ -489,7 +498,7 @@ function MultipleArraysRoot(exprs){
 	return this
 }
 util.inherits(MultipleArraysRoot, JsonFragment)
-function awaitRootGood(ctx,ss,state,isArr){
+function awaitRootGood(tip,ctx,ss,state,isArr){
 	if(isArr){
 		this.success(ctx,ss,state,isArr)
 		// drop
