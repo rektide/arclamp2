@@ -169,14 +169,13 @@ function _transform(chunk,outputFn,callback){
 	// open close array
 	}else if(token == ch.openarray){
 		this._cycle(undefined,ss,STATES.open,true)
-	
 		this.stack.push(0)
 	}else if(token == ch.closearray){
 		var d= this.stack.pop()
 		if(ss[2]){ // arrays position increments
 			++this.stack[ss._depth()-1]
 		}
-		ss= this._stackState()
+		ss= this._stackState() // rebuild for update
 		this._cycle(d,ss,STATES.close,true)
 	// open close object, dupe of array
 	}else if(token == ch.openobject){
@@ -209,12 +208,18 @@ function _cycle(ctx,ss,state,isArr){
 	if(local){
 		for(var t in local){
 			console.log("LOCAL",ss.join(":"),STATES[state])
-			local[t].call(this,ctx,ss,state,isArr)
+			var more= local[t].call(this,ctx,ss,state,isArr)
+			if(more){
+				console.log("MOREL",more.d)
+			}
 		}
 	}
 	for(var t in global){ 
 		console.log("GLOBAL",ss.join(":"),STATES[state])
-		global[t].call(this,ctx,ss,state,isArr)
+		var more= global[t].call(this,ctx,ss,state,isArr)
+		if(more){
+			console.log("MOREG",more.d)
+		}
 	}
 }
 
@@ -316,7 +321,7 @@ function JsonPathExpression(stack,expression,opts){
 }
 
 /**
-  a singleton
+  Base Fragment type.
 */
 function JsonFragment(exprs,frag){
 	this.exprs= exprs // JsonExpression
@@ -325,6 +330,7 @@ function JsonFragment(exprs,frag){
 }
 
 /**
+  A cursor pointing to a position in a JsonFragment
 */
 function Tip(frag,previousTip){
 	this.frag= frag
@@ -341,6 +347,7 @@ JsonFragment.prototype.install= function(previousTip){
 	console.log("INSTALL",this.constructor.name)
 	var tip= new Tip(this,previousTip)
 	tip.install()
+	return tip
 }
 
 Tip.prototype.install= function(){
@@ -369,7 +376,7 @@ Tip.prototype._installFrag= function(){
 }
 Tip.prototype._installHandle= function(h,state,n,d){
 	var handle= h.bind(this.frag,this)
-	handle.orig= h
+	handle.orig= h // bind is opaque.
 	if(state||!h.states){
 		this.frag.exprs.stack._pushHandle(handle,state===undefined?h.state:state,n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 	}else{
@@ -377,6 +384,7 @@ Tip.prototype._installHandle= function(h,state,n,d){
 			this.frag.exprs.stack._pushHandle(handle,h.states[s],n===undefined?h.d:n,d===undefined?this.stackDepth:d)
 		}
 	}
+	return handle
 }
 
 Tip.prototype._makeDropHandle= function(){
@@ -429,14 +437,18 @@ Tip.prototype.success= function(){
 	// install the next fragment at this depth
 	var nextFrag= this.findNextFrag()
 	if(nextFrag){
-		this.findNextFrag().install(this)
+		console.log("NEXT RX",this.frag.constructor.name)
+		return nextFrag.install(this)
 	}else{
+		console.log("SUCCESS!! RX",this.frag.constructor.name)
 		this.frag.exprs.stack.push(".") // success
 	}
 }
 
 Tip.prototype.findNextFrag= function(){
-	var nextFrag= this.frag.exprs.frags[this.frag.frag+1]
+	var i= this.frag.frag+1,
+	  nextFrag= this.frag.exprs.frags[i]
+	console.log("FNF--",i)
 	if(!nextFrag){
 		console.warn("unhandled end of tip",this.frag.frag)
 	}
@@ -469,7 +481,7 @@ Tag.prototype.awaitTag= function(tip,ctx,ss,state,isArr){
 	if(ss._last() == this.tag){
 		console.log("+++++++++++++++++++++++++++")
 		console.log("BAWAIT",this.tag,ss._last())
-		tip.success()
+		return tip.success()
 	}else{
 		console.log("GAWAIT",this.tag,ss._last())
 	}
@@ -479,26 +491,46 @@ Tag.prototype.awaitTag.states= [STATES.key,STATES.open]
 
 function Any(exprs){
 	_callSuper(Any,this,exprs)
+	this.nextFrag= this.exprs.frags[this.depth+1]
 	return this
 }
 util.inherits(Any, JsonFragment)
 
 Any.prototype.nextAny= function(){
-	if(!this.nextFrag)
-		this.nextFrag= this.exprs.frags[this.depth+1]
 	return this.nextFrag
 }
 
 Any.prototype.awaitAny= function(){
-	tip.success()
+	return tip.success()
 }
 
 function Filter(exprs,filter){
-	this.filter= filter
 	_callSuper(Filter,this,exprs)
+	this.filter= new Function("return ("+filter.replace("@","this")+")")
+	this.handles= [
+		this.awaitStart
+	]
 	return this
 }
 util.inherits(Filter, JsonFragment)
+
+Filter.prototype.awaitStart= function(tip,ctx,ss,state,isArr){
+	console.log("-------------------XXXX")
+	if(state==STATES.primitive){
+		var result= this.filter.call(ss._extra())
+		console.log("RESULTffff~",result)
+	}else{
+		tip.complete= tip._installHandle(this.awaitFinish)
+	}
+}
+Filter.prototype.awaitStart.d= 0
+Filter.prototype.awaitStart.states= [STATES.open,STATES.primitive]
+
+Filter.prototype.awaitFinish= function(tip,ctx,ss,state,isArr){
+	this._dropHandle(tip.complete)
+}
+Filter.prototype.awaitFinish.d= 1
+Filter.prototype.awaitFinish.states= [STATES.close]
 
 function Indexes(exprs,indexes){
 	this.indexes= indexes
